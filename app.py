@@ -134,7 +134,7 @@ def do_search(form):
                         except:
                             pass
                     results.append({
-                        'label': f"[{engine_name}] {label} for "{keyword}"" if keyword else f"[{engine_name}] {label}",
+                        'label': f'[{engine_name}] {label} for "{keyword}"' if keyword else f'[{engine_name}] {label}',
                         'url': search_url,
                         'status': status,
                         'title': title
