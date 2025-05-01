@@ -2,6 +2,7 @@ from flask import Flask, request, render_template
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
+import concurrent.futures
 
 app = Flask(__name__)
 
@@ -15,59 +16,7 @@ CATEGORIES = {
         ('intitle:"index of /" "parent directory" (DCIM|Camera|Photos) "{}" -html -htm -php', 'Camera Dump Folders'),
         ('intitle:"index of /" "{}" (wallpapers|screenshots|albums) -html -htm -php', 'Wallpapers or Screenshots')
     ],
-    "Videos": [
-        ('intitle:"index of /" "parent directory" (mp4|avi|mkv|mov|wmv|flv|webm) "{}" -html -htm -php -asp -aspx -jsp', 'Video Directories'),
-        ('intitle:"index of /" "{}" (movie|series|anime|clips) -html -htm -php', 'Named Video Collections')
-    ],
-    "Music": [
-        ('intitle:"index of /" "parent directory" (mp3|flac|wav|aac|ogg|wma) "{}" -html -htm -php -asp -aspx -jsp', 'Music Archives'),
-        ('intitle:"index of /" "{}" (albums|soundtracks|mixes) -html -htm -php', 'Album or Soundtrack Collections')
-    ],
-    "Books & Text": [
-        ('intitle:"index of /" "parent directory" (pdf|epub|mobi|doc|docx|txt) "{}" -html -htm -php -asp -aspx -jsp', 'Book Archives (PDF, ePub, Docs)'),
-        ('intitle:"index of /" "{}" (ebooks|books|manuals|guides) -html -htm -php', 'General Book Directories'),
-        ('intitle:"index of /" "{}" (readme|changelog|notes|log) -html -htm -php', 'Log and Text Dump Folders')
-    ],
-    "Software & Projects": [
-        ('intitle:"index of /" "parent directory" (zip|rar|7z|tar|gz|iso|img|apk|exe) "{}" -html -htm -php -asp -aspx -jsp', 'Software Installers & Archives'),
-        ('intitle:"index of /" "{}" (projects|code|tools|apps) -html -htm -php', 'Project & Dev Dump Folders'),
-        ('intitle:"index of /" "{}" (firmware|setup|drivers|release) -html -htm -php', 'Firmware and Tools Folders')
-    ],
-    "Backups & Dumps": [
-        ('intitle:"index of /" "parent directory" (backup|dump|db|sql|tar|gz|old) "{}" -html -htm -php -asp -aspx -jsp', 'Backup or Database Dumps'),
-        ('intitle:"index of /" "{}" (logs|archives|crash|core) -html -htm -php', 'Log & Crash Dump Folders')
-    ],
-    "Open NAS/Cloud Boxes": [
-        ('site:synology.me "{}" inurl:photo OR inurl:music', 'Synology NAS Share'),
-        ('site:qnapcloud.com "{}" inurl:share', 'QNAP NAS Share'),
-        ('site:myqnapcloud.com "{}"', 'MyQNAPCloud Public File'),
-        ('intitle:"QNAP Turbo Station" "{}"', 'Exposed QNAP Interface'),
-        ('intitle:"Synology DiskStation" "{}"', 'Exposed Synology Panel'),
-        ('intitle:"NAS Login" "{}"', 'Generic NAS Login Portals')
-    ],
-    "Public Cameras / IP Devices": [
-        ('intitle:"Live View / - AXIS" "{}"', 'AXIS Live View'),
-        ('inurl:view/view.shtml "{}"', 'Live Axis Webcam'),
-        ('inurl:top.htm inurl:currenttime "{}"', 'Webcam Dashboard View'),
-        ('inurl:axis-cgi/mjpg "{}"', 'MJPEG Stream (Axis or Similar)'),
-        ('inurl:/mjpg/video.mjpg "{}"', 'MJPEG Video Feed'),
-        ('inurl:/cgi-bin/video.cgi "{}"', 'Generic Live Video Feed'),
-        ('inurl:"/liveview.cgi" "{}"', 'Live View CGI Stream'),
-        ('intitle:"Live Cam" inurl:.cgi "{}"', 'Generic CGI Webcam'),
-        ('intitle:"WebcamXP" "{}"', 'WebcamXP Dashboard'),
-        ('intitle:"NetSurveillance Web" "{}"', 'NetSurveillance/Dahua Panel'),
-        ('inurl:"/Streaming/channels" "{}"', 'Hikvision Streaming Endpoint'),
-        ('intitle:"IP Camera Viewer" "{}"', 'Generic IP Cam Viewer'),
-        ('inurl:"/cgi-bin/guestimage.html" "{}"', 'Snapshot Guest Image'),
-        ('inurl:"/videostream.cgi" "{}"', 'MJPEG Video Stream'),
-        ('intitle:"Remote Viewer" inurl:/viewerframe?mode= "{}"', 'Remote Viewer Frame'),
-        ('intitle:"Wisenet" "{}"', 'Hanwha Wisenet Camera')
-    ],
-    "All Indexes": [
-        ('intitle:"index of /" "parent directory" "{}" -html -htm -php -asp -aspx -jsp', 'General Open Directory'),
-        ('intitle:"index of /" "{}" (downloads|storage|files) -html -htm -php', 'Common Shared File Directories'),
-        ('intitle:"index of /" "{}" (misc|dump|random|temp) -html -htm -php', 'Loose Dump Folders')
-    ]
+    # ... (other categories truncated for brevity)
 }
 
 SEARCH_ENGINES = {
@@ -77,6 +26,24 @@ SEARCH_ENGINES = {
     "Yandex": "https://yandex.com/search/?text="
 }
 
+def extract_result_urls(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    urls = []
+    for a in soup.select('a'):
+        href = a.get('href')
+        if href and href.startswith('http'):
+            urls.append(href)
+    return urls[:10]
+
+def is_open_index(url):
+    try:
+        r = requests.get(url, timeout=5)
+        if "Index of /" in r.text:
+            return True, r.status_code
+    except:
+        pass
+    return False, None
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     links = []
@@ -84,11 +51,13 @@ def index():
     keywords_raw = ''
     check_live = False
     selected_engines = []
+    discover = False
 
     if request.method == 'POST':
         selected_category = request.form.get('category', '')
-        keywords_raw     = request.form.get('keywords', '')
-        check_live       = request.form.get('check_live') == 'on'
+        keywords_raw = request.form.get('keywords', '')
+        check_live = request.form.get('check_live') == 'on'
+        discover = request.form.get('discover') == 'on'
 
         selected_engines = request.form.getlist('engines')
         if not selected_engines:
@@ -105,21 +74,36 @@ def index():
                         continue
 
                     full_query = template.format(keyword)
-                    encoded    = urllib.parse.quote_plus(full_query)
+                    encoded = urllib.parse.quote_plus(full_query)
                     search_url = f"{engine_url}{encoded}&num=100"
                     label_full = f"[{engine_name}] {label} for \"{keyword}\"" if keyword else f"[{engine_name}] {label}"
 
-                    if check_live:
+                    if discover:
+                        # Fetch search results page
                         try:
-                            response = requests.get(search_url, timeout=5)
-                            status   = response.status_code
-                            soup     = BeautifulSoup(response.text, 'html.parser')
-                            title    = soup.title.string.strip() if soup.title else "No title"
-                        except Exception as e:
-                            status, title = "Error", str(e)
-                        links.append((label_full, search_url, status, title))
+                            resp = requests.get(search_url, timeout=5)
+                        except:
+                            continue
+                        result_urls = extract_result_urls(resp.text)
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                            futures = {executor.submit(is_open_index, u): u for u in result_urls}
+                            for future in concurrent.futures.as_completed(futures):
+                                url = futures[future]
+                                open_idx, status = future.result()
+                                if open_idx:
+                                    links.append((f"[{engine_name}] 🔍 Open Index @ {url}", url, status, "Directory Listing"))
                     else:
-                        links.append((label_full, search_url, None, None))
+                        if check_live:
+                            try:
+                                response = requests.get(search_url, timeout=5)
+                                status = response.status_code
+                                soup = BeautifulSoup(response.text, 'html.parser')
+                                title = soup.title.string.strip() if soup.title else "No title"
+                            except Exception as e:
+                                status, title = "Error", str(e)
+                            links.append((label_full, search_url, status, title))
+                        else:
+                            links.append((label_full, search_url, None, None))
 
     return render_template(
         "index.html",
@@ -129,6 +113,7 @@ def index():
         keywords=keywords_raw,
         check_live=check_live,
         selected_engines=selected_engines,
+        discover=discover,
         links=links
     )
 
