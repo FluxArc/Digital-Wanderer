@@ -41,5 +41,5 @@ By using this tool, you agree to:
 - Follow the Terms of Service of each search engine used
 - Never use the tool for exploitation, surveillance, or harm
 
-Built by Brad Roths 🤍  
+Built by FluxArc 🤍  
 Empowering ethical exploration — one search at a time.
