@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, render_template, jsonify
 import urllib.parse
 import requests
@@ -53,13 +52,13 @@ SEARCH_ENGINES = {
 
 def extract_result_urls(html):
     soup = BeautifulSoup(html, 'html.parser')
-    urls = [a['href'] for a in soup.select('a[href^="http"]')]
-    return urls[:10]
+    return [a['href'] for a in soup.select('a[href^="http"]')][:10]
 
 def is_open_index(url):
     try:
         r = requests.get(url, timeout=5)
-        if "Index of" in r.text or "Parent Directory" in r.text:
+        text = r.text
+        if "Index of" in text or "Parent Directory" in text:
             return True, r.status_code
     except:
         pass
@@ -71,6 +70,7 @@ def do_search(form):
     check_live      = form.get('check_live') == 'on'
     discover        = form.get('discover') == 'on'
     require_front   = form.get('require_frontend') == 'on'
+    include_index   = form.get('include_index') == 'on'
     engines         = form.getlist('engines') or list(SEARCH_ENGINES.keys())
 
     kw_combined = ' '.join([kw.strip() for kw in keywords_raw.split(',') if kw.strip()])
@@ -79,82 +79,71 @@ def do_search(form):
 
     for kw in keywords:
         for template, label in CATEGORIES.get(category, []):
+            if include_index:
+                template = 'intitle:"index of /" ' + template
             for name, base_url in SEARCH_ENGINES.items():
                 if name not in engines:
                     continue
-                query    = urllib.parse.quote_plus(template.format(kw))
-                search_u = f"{base_url}{query}&num=100"
+                query      = urllib.parse.quote_plus(template.format(kw))
+                search_url = f"{base_url}{query}&num=100"
 
                 if discover:
                     try:
-                        resp = requests.get(search_u, timeout=5)
+                        resp = requests.get(search_url, timeout=5)
                         urls = extract_result_urls(resp.text)
                     except:
                         continue
                     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
                         futures = {pool.submit(is_open_index, u): u for u in urls}
                         for fut in concurrent.futures.as_completed(futures):
-                            u, status = futures[fut], None
+                            url, status = futures[fut], None
                             open_idx, status = fut.result()
-                            if not open_idx: 
+                            if not open_idx:
                                 continue
                             if require_front:
-                                p    = urlparse(u)
+                                p    = urlparse(url)
                                 root = f"{p.scheme}://{p.netloc}/"
                                 try:
                                     r2 = requests.get(root, timeout=5)
-                                    ok = (r2.status_code==200 and "Index of" not in r2.text)
+                                    if r2.status_code != 200 or "Index of" in r2.text:
+                                        continue
                                 except:
-                                    ok = False
-                                if not ok:
                                     continue
-                                title = "Directory + Front-End"
+                                title = 'Directory + Front-End'
                                 lbl   = f"[{name}] ✔️ {p.netloc}"
                             else:
-                                title = "Directory Listing"
+                                title = 'Directory Listing'
                                 lbl   = f"[{name}] 🔍 Open Index"
-                            results.append({
-                                'label': lbl,
-                                'url':   u,
-                                'status': status,
-                                'title':  title
-                            })
+                            results.append({'label': lbl, 'url': url, 'status': status, 'title': title})
                 else:
-                    status, title = None, ''
+                    status, page_title = None, ''
                     if check_live:
                         try:
-                            r = requests.get(search_u, timeout=5)
+                            r = requests.get(search_url, timeout=5)
                             status = r.status_code
                             soup   = BeautifulSoup(r.text, 'html.parser')
-                            title  = soup.title.string.strip() if soup.title else ''
+                            page_title = soup.title.string.strip() if soup.title else ''
                         except:
                             pass
-                    lbl = f'[{name}] {label} for \"{kw}\"' if kw else f'[{name}] {label}'
-                    results.append({
-                        'label': lbl,
-                        'url':   search_u,
-                        'status': status,
-                        'title':  title
-                    })
+                    lbl = f'[{name}] {label} for "{kw}"' if kw else f'[{name}] {label}'
+                    results.append({'label': lbl, 'url': search_url, 'status': status, 'title': page_title})
     return results
 
 @app.route('/', methods=['GET'])
 def index():
-    return render_template('index.html',
-        categories=CATEGORIES.keys(),
-        SEARCH_ENGINES=SEARCH_ENGINES
-    )
+    return render_template('index.html', categories=CATEGORIES.keys(), SEARCH_ENGINES=SEARCH_ENGINES)
 
 @app.route('/search', methods=['POST'])
 def search():
     data   = do_search(request.form)
     params = {
-        'category':        request.form.get('category',''),
-        'keywords':        request.form.get('keywords',''),
-        'check_live':      request.form.get('check_live')=='on',
-        'discover':        request.form.get('discover')=='on',
-        'require_frontend':request.form.get('require_frontend')=='on',
-        'selected_engines':request.form.getlist('engines') or list(SEARCH_ENGINES.keys())
+        'category':         request.form.get('category',''),
+        'keywords':         request.form.get('keywords',''),
+        'check_live':       request.form.get('check_live')=='on',
+        'discover':         request.form.get('discover')=='on',
+        'require_frontend': request.form.get('require_frontend')=='on',
+        'include_index':    request.form.get('include_index')=='on',
+        'selected_engines': request.form.getlist('engines') or list(SEARCH_ENGINES.keys())
     }
     return jsonify({'results': data, 'params': params})
 
