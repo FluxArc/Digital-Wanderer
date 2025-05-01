@@ -155,7 +155,7 @@ def do_search(form):
 def index():
     return render_template('index.html',
         categories=CATEGORIES.keys(),
-        SEARCH_ENGINES=SEARCH_ENGINES,
+        SEARCH_ENGINES=SEARCH_ENGINES
     )
 
 @app.route('/search', methods=['POST'])
