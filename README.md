@@ -16,7 +16,7 @@
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/digital-wanderer.git
+git clone https://github.com/FluxArc/digital-wanderer.git
 cd digital-wanderer
 ```
 
