@@ -7,13 +7,29 @@ from urllib.parse import urlparse
 
 app = Flask(__name__)
 
-# Broadened discovery patterns without strict "index of /"
+# Broadened discovery patterns with toggle for strict index filter
 CATEGORIES = {
     "General Directories": [
         ('"parent directory" "{}"', 'Parent Directory Mention'),
         ('inurl:"/files/" "{}"', 'Files Folder'),
         ('"Directory Listing" "{}"', 'Directory Listing Title'),
         ('inurl:"/?C=N;O=D" "{}"', 'Apache Sort Pattern')
+    ],
+    "NAS / Cloud Devices": [
+        ('site:synology.me "{}" inurl:photo OR inurl:music', 'Synology NAS Share'),
+        ('site:qnapcloud.com "{}" inurl:share', 'QNAP NAS Share'),
+        ('site:myqnapcloud.com "{}"', 'MyQNAPCloud Public File'),
+        ('intitle:"QNAP Turbo Station" "{}"', 'Exposed QNAP Panel'),
+        ('intitle:"Synology DiskStation" "{}"', 'Exposed Synology Panel')
+    ],
+    "Cameras & IP Devices": [
+        ('intitle:"Live View / - AXIS" "{}"', 'AXIS Live View'),
+        ('inurl:"/view/view.shtml" "{}"', 'Axis Webcam Interface'),
+        ('inurl:"/mjpg/video.mjpg" "{}"', 'MJPEG Video Feed'),
+        ('inurl:"/Streaming/channels" "{}"', 'Hikvision Stream'),
+        ('intitle:"WebcamXP" "{}"', 'WebcamXP Dashboard'),
+        ('intitle:"NetSurveillance Web" "{}"', 'Dahua/Netsurveillance'),
+        ('inurl:"/cgi-bin/video.cgi" "{}"', 'Generic IP Cam CGI')
     ],
     "Google Drive": [
         ('inurl:"drive.google.com" "{}"', 'Any Public Google Drive Content'),
@@ -119,7 +135,7 @@ def do_search(form):
                     status, page_title = None, ''
                     if check_live:
                         try:
-                            r = requests.get(search_url, timeout=5)
+                            r  = requests.get(search_url, timeout=5)
                             status = r.status_code
                             soup   = BeautifulSoup(r.text, 'html.parser')
                             page_title = soup.title.string.strip() if soup.title else ''
