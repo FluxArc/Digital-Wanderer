@@ -72,7 +72,6 @@
     </div>
   </div>
 </div>
-<!-- Offcanvas -->
 <div class="offcanvas offcanvas-start" tabindex="-1" id="filterPanel">
   <div class="offcanvas-header">
     <h5>Filters</h5>
@@ -80,22 +79,36 @@
   </div>
   <div class="offcanvas-body">
     <form id="filter-form-mobile">
-      <div class="mb-3"><label class="form-label"><strong>Category</strong></label>
+      <div class="mb-3">
+        <label class="form-label"><strong>Category</strong></label>
         <select class="form-select" name="category">
           {% for cat in categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
         </select>
       </div>
-      <div class="mb-3"><label class="form-label"><strong>Keywords</strong></label><input type="text" class="form-control" name="keywords" placeholder="e.g. vacation, 2023"></div>
-      <div class="mb-3"><label class="form-label"><strong>Search Engines</strong></label><br>
+      <div class="mb-3">
+        <label class="form-label"><strong>Keywords</strong></label>
+        <input type="text" class="form-control" name="keywords" placeholder="e.g. vacation, 2023">
+      </div>
+      <div class="mb-3">
+        <label class="form-label"><strong>Search Engines</strong></label><br>
         {% for name in SEARCH_ENGINES.keys() %}
         <div class="form-check form-check-inline">
           <input class="form-check-input" type="checkbox" name="engines" value="{{ name }}" checked>
           <label class="form-check-label">{{ name }}</label>
         </div>{% endfor %}
       </div>
-      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="check_live"><label class="form-check-label">Check if links are live</label></div>
-      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="discover"><label class="form-check-label">Discover open indexes</label></div>
-      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="require_frontend"><label class="form-check-label">Require front-end</label></div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="check_live">
+        <label class="form-check-label">Check if links are live</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="discover">
+        <label class="form-check-label">Discover open indexes</label>
+      </div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="require_frontend">
+        <label class="form-check-label">Require front-end</label>
+      </div>
       <button type="submit" class="btn btn-success w-100 mt-3">🔍 Search</button>
     </form>
   </div>
