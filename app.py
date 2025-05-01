@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, request, render_template, jsonify
 import urllib.parse
 import requests
@@ -52,11 +53,7 @@ SEARCH_ENGINES = {
 
 def extract_result_urls(html):
     soup = BeautifulSoup(html, 'html.parser')
-    urls = []
-    for a in soup.select('a'):
-        href = a.get('href')
-        if href and href.startswith('http'):
-            urls.append(href)
+    urls = [a['href'] for a in soup.select('a[href^="http"]')]
     return urls[:10]
 
 def is_open_index(url):
@@ -69,75 +66,75 @@ def is_open_index(url):
     return False, None
 
 def do_search(form):
-    selected_category = form.get('category', '')
-    keywords_raw = form.get('keywords', '')
-    check_live = form.get('check_live') == 'on'
-    discover = form.get('discover') == 'on'
-    require_frontend = form.get('require_frontend') == 'on'
-    selected_engines = form.getlist('engines') or list(SEARCH_ENGINES.keys())
+    category        = form.get('category', '')
+    keywords_raw    = form.get('keywords', '')
+    check_live      = form.get('check_live') == 'on'
+    discover        = form.get('discover') == 'on'
+    require_front   = form.get('require_frontend') == 'on'
+    engines         = form.getlist('engines') or list(SEARCH_ENGINES.keys())
 
-    keyword_combined = ' '.join([kw.strip() for kw in keywords_raw.split(',') if kw.strip()])
-    keywords = [keyword_combined] if keyword_combined else ['']
-    results = []
+    kw_combined = ' '.join([kw.strip() for kw in keywords_raw.split(',') if kw.strip()])
+    keywords    = [kw_combined] if kw_combined else ['']
+    results     = []
 
-    for keyword in keywords:
-        for template, label in CATEGORIES.get(selected_category, []):
-            for engine_name, engine_url in SEARCH_ENGINES.items():
-                if engine_name not in selected_engines:
+    for kw in keywords:
+        for template, label in CATEGORIES.get(category, []):
+            for name, base_url in SEARCH_ENGINES.items():
+                if name not in engines:
                     continue
-                full_query = template.format(keyword)
-                encoded = urllib.parse.quote_plus(full_query)
-                search_url = f"{engine_url}{encoded}&num=100"
+                query    = urllib.parse.quote_plus(template.format(kw))
+                search_u = f"{base_url}{query}&num=100"
 
                 if discover:
                     try:
-                        resp = requests.get(search_url, timeout=5)
-                        result_urls = extract_result_urls(resp.text)
+                        resp = requests.get(search_u, timeout=5)
+                        urls = extract_result_urls(resp.text)
                     except:
                         continue
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                        futures = {executor.submit(is_open_index, u): u for u in result_urls}
-                        for future in concurrent.futures.as_completed(futures):
-                            url = futures[future]
-                            open_idx, status = future.result()
-                            if open_idx:
-                                if require_frontend:
-                                    parsed = urlparse(url)
-                                    root = f"{parsed.scheme}://{parsed.netloc}/"
-                                    try:
-                                        r2 = requests.get(root, timeout=5)
-                                        if r2.status_code == 200 and "Index of" not in r2.text:
-                                            results.append({
-                                                'label': f"[{engine_name}] ✔️ {parsed.netloc}",
-                                                'url': url,
-                                                'status': status,
-                                                'title': 'Directory + Front-End'
-                                            })
-                                    except:
-                                        pass
-                                else:
-                                    results.append({
-                                        'label': f"[{engine_name}] 🔍 Open Index",
-                                        'url': url,
-                                        'status': status,
-                                        'title': 'Directory Listing'
-                                    })
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                        futures = {pool.submit(is_open_index, u): u for u in urls}
+                        for fut in concurrent.futures.as_completed(futures):
+                            u, status = futures[fut], None
+                            open_idx, status = fut.result()
+                            if not open_idx: 
+                                continue
+                            if require_front:
+                                p    = urlparse(u)
+                                root = f"{p.scheme}://{p.netloc}/"
+                                try:
+                                    r2 = requests.get(root, timeout=5)
+                                    ok = (r2.status_code==200 and "Index of" not in r2.text)
+                                except:
+                                    ok = False
+                                if not ok:
+                                    continue
+                                title = "Directory + Front-End"
+                                lbl   = f"[{name}] ✔️ {p.netloc}"
+                            else:
+                                title = "Directory Listing"
+                                lbl   = f"[{name}] 🔍 Open Index"
+                            results.append({
+                                'label': lbl,
+                                'url':   u,
+                                'status': status,
+                                'title':  title
+                            })
                 else:
-                    status = None
-                    title = ''
+                    status, title = None, ''
                     if check_live:
                         try:
-                            r = requests.get(search_url, timeout=5)
+                            r = requests.get(search_u, timeout=5)
                             status = r.status_code
-                            soup = BeautifulSoup(r.text, 'html.parser')
-                            title = soup.title.string.strip() if soup.title else ''
+                            soup   = BeautifulSoup(r.text, 'html.parser')
+                            title  = soup.title.string.strip() if soup.title else ''
                         except:
                             pass
+                    lbl = f'[{name}] {label} for \"{kw}\"' if kw else f'[{name}] {label}'
                     results.append({
-                        'label': f'[{engine_name}] {label} for "{keyword}"' if keyword else f'[{engine_name}] {label}',
-                        'url': search_url,
+                        'label': lbl,
+                        'url':   search_u,
                         'status': status,
-                        'title': title
+                        'title':  title
                     })
     return results
 
@@ -150,16 +147,16 @@ def index():
 
 @app.route('/search', methods=['POST'])
 def search():
-    results = do_search(request.form)
+    data   = do_search(request.form)
     params = {
-        'category': request.form.get('category', ''),
-        'keywords': request.form.get('keywords', ''),
-        'check_live': request.form.get('check_live') == 'on',
-        'discover': request.form.get('discover') == 'on',
-        'require_frontend': request.form.get('require_frontend') == 'on',
-        'selected_engines': request.form.getlist('engines') or list(SEARCH_ENGINES.keys())
+        'category':        request.form.get('category',''),
+        'keywords':        request.form.get('keywords',''),
+        'check_live':      request.form.get('check_live')=='on',
+        'discover':        request.form.get('discover')=='on',
+        'require_frontend':request.form.get('require_frontend')=='on',
+        'selected_engines':request.form.getlist('engines') or list(SEARCH_ENGINES.keys())
     }
-    return jsonify({'results': results, 'params': params})
+    return jsonify({'results': data, 'params': params})
 
 if __name__ == '__main__':
     app.run(debug=True)
