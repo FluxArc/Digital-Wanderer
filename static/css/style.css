@@ -1,0 +1,18 @@
+:root {
+  --bg: #f8f9fa;
+  --fg: #212529;
+  --card-bg: #ffffff;
+}
+[data-theme="dark"] {
+  --bg: #212529;
+  --fg: #f8f9fa;
+  --card-bg: #2c2f33;
+}
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  padding-top: 56px;
+}
+.card {
+  background-color: var(--card-bg);
+}
