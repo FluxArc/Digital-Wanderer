@@ -22,7 +22,7 @@
     <div class="col-md-3 d-none d-md-block">
       <div class="card p-3 mb-3">
         <h5>Filters</h5>
-        <form id="filter-form">
+        <form id="filter-form" action="/search" method="post">
           <div class="mb-3">
             <label class="form-label"><strong>Category</strong></label>
             <select class="form-select" name="category">
@@ -78,7 +78,7 @@
     <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
   </div>
   <div class="offcanvas-body">
-    <form id="filter-form-mobile">
+    <form id="filter-form-mobile" action="/search" method="post">
       <div class="mb-3">
         <label class="form-label"><strong>Category</strong></label>
         <select class="form-select" name="category">
