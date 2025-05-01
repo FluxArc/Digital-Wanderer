@@ -83,11 +83,16 @@ def index():
     selected_category = ''
     keywords_raw = ''
     check_live = False
+    selected_engines = []
 
     if request.method == 'POST':
         selected_category = request.form.get('category', '')
-        keywords_raw = request.form.get('keywords', '')
-        check_live = request.form.get('check_live') == 'on'
+        keywords_raw     = request.form.get('keywords', '')
+        check_live       = request.form.get('check_live') == 'on'
+
+        selected_engines = request.form.getlist('engines')
+        if not selected_engines:
+            selected_engines = list(SEARCH_ENGINES.keys())
 
         keyword_combined = ' '.join([kw.strip() for kw in keywords_raw.split(',') if kw.strip()])
         keywords = [keyword_combined] if keyword_combined else ['']
@@ -96,29 +101,34 @@ def index():
         for keyword in keywords:
             for template, label in queries:
                 for engine_name, engine_url in SEARCH_ENGINES.items():
+                    if engine_name not in selected_engines:
+                        continue
+
                     full_query = template.format(keyword)
-                    encoded = urllib.parse.quote_plus(full_query)
+                    encoded    = urllib.parse.quote_plus(full_query)
                     search_url = f"{engine_url}{encoded}&num=100"
                     label_full = f"[{engine_name}] {label} for \"{keyword}\"" if keyword else f"[{engine_name}] {label}"
 
                     if check_live:
                         try:
                             response = requests.get(search_url, timeout=5)
-                            status = response.status_code
-                            soup = BeautifulSoup(response.text, 'html.parser')
-                            title = soup.title.string.strip() if soup.title else "No title"
+                            status   = response.status_code
+                            soup     = BeautifulSoup(response.text, 'html.parser')
+                            title    = soup.title.string.strip() if soup.title else "No title"
                         except Exception as e:
-                            status = "Error"
-                            title = str(e)
+                            status, title = "Error", str(e)
                         links.append((label_full, search_url, status, title))
                     else:
                         links.append((label_full, search_url, None, None))
 
-    return render_template("index.html",
+    return render_template(
+        "index.html",
         categories=CATEGORIES.keys(),
+        SEARCH_ENGINES=SEARCH_ENGINES,
         selected_category=selected_category,
         keywords=keywords_raw,
         check_live=check_live,
+        selected_engines=selected_engines,
         links=links
     )
 
