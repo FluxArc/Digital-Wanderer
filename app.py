@@ -7,51 +7,39 @@ from urllib.parse import urlparse
 
 app = Flask(__name__)
 
+# Broadened discovery patterns without strict "index of /"
 CATEGORIES = {
+    "General Directories": [
+        ('"parent directory" "{}"', 'Parent Directory Mention'),
+        ('inurl:"/files/" "{}"', 'Files Folder'),
+        ('"Directory Listing" "{}"', 'Directory Listing Title'),
+        ('inurl:"/?C=N;O=D" "{}"', 'Apache Sort Pattern')
+    ],
     "Google Drive": [
         ('inurl:"drive.google.com" "{}"', 'Any Public Google Drive Content'),
-        ('inurl:"drive.google.com"', 'All Public Google Drive Links')
+        ('inurl:"drive.google.com" "{}" -html -htm', 'Drive Links')
     ],
     "Photos": [
-        ('intitle:"index of /" "parent directory" (jpg|jpeg|png|gif|bmp|tiff|webp) "{}" -html -htm -php -asp -aspx -jsp', 'Photo Archive'),
-        ('intitle:"index of /" "parent directory" (DCIM|Camera|Photos) "{}" -html -htm -php', 'Camera Dump Folders'),
-        ('intitle:"index of /" "{}" (wallpapers|screenshots|albums) -html -htm -php', 'Wallpapers or Screenshots')
+        ('"parent directory" (jpg|jpeg|png|gif|bmp|tiff|webp) "{}"', 'Any Image File Folders'),
+        ('inurl:photos "{}"', 'Photo Path')
     ],
     "Videos": [
-        ('intitle:"index of /" "parent directory" (mp4|avi|mkv|mov|wmv|flv|webm) "{}" -html -htm -php -asp -aspx -jsp', 'Video Directories'),
-        ('intitle:"index of /" "{}" (movie|series|anime|clips) -html -htm -php', 'Named Video Collections')
+        ('"parent directory" (mp4|avi|mkv|mov|wmv|flv|webm) "{}"', 'Any Video File Folders'),
+        ('inurl:videos "{}"', 'Video Path')
     ],
     "Music": [
-        ('intitle:"index of /" "parent directory" (mp3|flac|wav|aac|ogg|wma) "{}" -html -htm -php -asp -aspx -jsp', 'Music Archives'),
-        ('intitle:"index of /" "{}" (albums|soundtracks|mixes) -html -htm -php', 'Album or Soundtrack Collections')
+        ('"parent directory" (mp3|flac|wav|aac|ogg|wma) "{}"', 'Any Audio File Folders'),
+        ('inurl:music "{}"', 'Music Path')
     ],
-    "Config & Credentials": [
-        ('intitle:"index of /" "parent directory" (config.php|.env|settings.xml|credentials.json) "{}"', 'Config Files & Credentials')
-    ],
-    "Repositories": [
-        ('inurl:".git/" "index of /" "{}"', 'Exposed Git Repository'),
-        ('inurl:".svn/" "index of /" "{}"', 'Exposed SVN Repository')
-    ],
-    "CMS Uploads": [
-        ('intitle:"index of /wp-content/uploads" "{}"', 'WordPress Uploads'),
-        ('intitle:"index of /sites/default/files" "{}"', 'Drupal Uploads')
+    "Text & Docs": [
+        ('"parent directory" (pdf|epub|mobi|doc|docx|txt) "{}"', 'Any Document Folders'),
+        ('inurl:docs "{}"', 'Docs Path')
     ],
     "Backups & Dumps": [
-        ('intitle:"index of /" "parent directory" (sql|bak|zip|tar.gz) "{}"', 'Database & Backup Dumps')
+        ('"parent directory" (zip|rar|tar|gz|bak|sql) "{}"', 'Backup Archives')
     ],
-    "Logs": [
-        ('intitle:"index of /" "parent directory" (log|txt|dump) "{}"', 'Log & Crash Dumps')
-    ],
-    "FTP Shares": [
-        ('inurl:"ftp://" "index of /" "{}"', 'FTP Share'),
-        ('site:ftp.* "Index of /" "{}"', 'FTP Server Index')
-    ],
-    "IoT Devices": [
-        ('inurl:"/video.cgi" "parent directory" "{}"', 'DVR/NVR Video CGI'),
-        ('inurl:"/axis-cgi" "index of /" "{}"', 'Axis-CGI Exposure')
-    ],
-    "All Indexes": [
-        ('intitle:"index of /" "parent directory" "{}" -html -htm -php -asp -aspx -jsp', 'General Open Directory')
+    "Config & Credentials": [
+        ('"parent directory" (config|.env|credentials|settings) "{}"', 'Config & Credential Files')
     ]
 }
 
@@ -74,7 +62,7 @@ def extract_result_urls(html):
 def is_open_index(url):
     try:
         r = requests.get(url, timeout=5)
-        if "Index of /" in r.text:
+        if "Index of" in r.text or "Parent Directory" in r.text:
             return True, r.status_code
     except:
         pass
@@ -91,6 +79,7 @@ def do_search(form):
     keyword_combined = ' '.join([kw.strip() for kw in keywords_raw.split(',') if kw.strip()])
     keywords = [keyword_combined] if keyword_combined else ['']
     results = []
+
     for keyword in keywords:
         for template, label in CATEGORIES.get(selected_category, []):
             for engine_name, engine_url in SEARCH_ENGINES.items():
@@ -99,12 +88,13 @@ def do_search(form):
                 full_query = template.format(keyword)
                 encoded = urllib.parse.quote_plus(full_query)
                 search_url = f"{engine_url}{encoded}&num=100"
+
                 if discover:
                     try:
                         resp = requests.get(search_url, timeout=5)
+                        result_urls = extract_result_urls(resp.text)
                     except:
                         continue
-                    result_urls = extract_result_urls(resp.text)
                     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                         futures = {executor.submit(is_open_index, u): u for u in result_urls}
                         for future in concurrent.futures.as_completed(futures):
@@ -116,9 +106,9 @@ def do_search(form):
                                     root = f"{parsed.scheme}://{parsed.netloc}/"
                                     try:
                                         r2 = requests.get(root, timeout=5)
-                                        if r2.status_code == 200 and "Index of /" not in r2.text:
+                                        if r2.status_code == 200 and "Index of" not in r2.text:
                                             results.append({
-                                                'label': f"[{engine_name}] 🔍 {parsed.netloc}",
+                                                'label': f"[{engine_name}] ✔️ {parsed.netloc}",
                                                 'url': url,
                                                 'status': status,
                                                 'title': 'Directory + Front-End'
@@ -137,14 +127,14 @@ def do_search(form):
                     title = ''
                     if check_live:
                         try:
-                            resp = requests.get(search_url, timeout=5)
-                            status = resp.status_code
-                            soup = BeautifulSoup(resp.text, 'html.parser')
+                            r = requests.get(search_url, timeout=5)
+                            status = r.status_code
+                            soup = BeautifulSoup(r.text, 'html.parser')
                             title = soup.title.string.strip() if soup.title else ''
                         except:
-                            status = None
+                            pass
                     results.append({
-                        'label': f"[{engine_name}] {label} for \"{keyword}\"" if keyword else f"[{engine_name}] {label}",
+                        'label': f"[{engine_name}] {label} for "{keyword}"" if keyword else f"[{engine_name}] {label}",
                         'url': search_url,
                         'status': status,
                         'title': title
